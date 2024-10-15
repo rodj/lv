@@ -1,4 +1,4 @@
-enum 50100 "Amount Filter Option"
+enum 50101 "Amount Filter Option"
 {
     Extensible = true;
 

@@ -127,16 +127,23 @@ page 50103 "Loan Master Card"
 
                 trigger OnAction()
                 var
-                    LoanJournalPosting: Codeunit "Loan Journal Posting";
+                    Loan: Codeunit "Loan Journal Posting";
                     PrepareOnly: Boolean;
                     ErrorText: Text;
+                    Result: Boolean;
+                    TransActionType: Enum "Loan Transaction Type";
                 begin
 
                     if Rec.ValidateLoanMasterRecord() then begin
 
                         ClearLastError();
+
                         PrepareOnly := true;
-                        if not LoanJournalPosting.LoanDisbursementHandleEntries(PrepareOnly, Rec, Rec."Loan Amount", WorkDate()) then begin
+                        TransActionType := "Loan Transaction Type"::Disbursement;
+                        // procedure ProcessLoanTransaction(var LoanMaster: Record "Loan Master"; TransactionAmount: Decimal; PostingDate: Date; TransactionType: Option Disbursement,Repayment; PrepareOnly: Boolean): Boolean
+                        Result := Loan.ProcessLoanTransaction(Rec, Rec."Loan Amount", WorkDate, TransactionType, PrepareOnly);
+
+                        if not Result then begin
                             ErrorText := GetLastErrorText();
                             if ErrorText = '' then
                                 ErrorText := 'Unknown error occurred during loan disbursement posting.';
