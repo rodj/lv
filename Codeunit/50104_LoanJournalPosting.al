@@ -17,6 +17,7 @@ codeunit 50104 "Loan Journal Posting"
 
     procedure ProcessLoanTransaction(var LoanMaster: Record "Loan Master"; TransactionAmount: Decimal; PostingDate: Date; TransactionType: enum "Loan Transaction Type"; PrepareOnly: Boolean): Boolean
     var
+        GenJournalLine: Record "Gen. Journal Line";
         GenJournalBatch: Record "Gen. Journal Batch";
         GLSetup: Record "General Ledger Setup";
     begin
@@ -39,50 +40,30 @@ codeunit 50104 "Loan Journal Posting"
             exit(false);
         end;
 
-        // Process entries based on transaction type
+        // Clear existing lines in the batch
+        GenJournalLine.SetRange("Journal Template Name", GenJournalBatch."Journal Template Name");
+        GenJournalLine.SetRange("Journal Batch Name", GenJournalBatch.Name);
+        GenJournalLine.DeleteAll();
+
+        // Create balanced entries
         case TransactionType of
             "Loan Transaction Type"::Disbursement:
                 begin
-                    if not ProcessEntry(LoanMaster, TransactionAmount, false, PostingDate, PrepareOnly, GenJournalBatch) then
-                        exit(false);
-                    if not ProcessEntry(LoanMaster, -TransactionAmount, true, PostingDate, PrepareOnly, GenJournalBatch) then
-                        exit(false);
+                    CreateJournalLine(GenJournalLine, GenJournalBatch, LoanMaster, TransactionAmount, false, PostingDate);
+                    CreateJournalLine(GenJournalLine, GenJournalBatch, LoanMaster, -TransactionAmount, true, PostingDate);
                 end;
             "Loan Transaction Type"::Repayment:
                 begin
-                    if not ProcessEntry(LoanMaster, TransactionAmount, true, PostingDate, PrepareOnly, GenJournalBatch) then
-                        exit(false);
-                    if not ProcessEntry(LoanMaster, -TransactionAmount, false, PostingDate, PrepareOnly, GenJournalBatch) then
-                        exit(false);
+                    CreateJournalLine(GenJournalLine, GenJournalBatch, LoanMaster, TransactionAmount, true, PostingDate);
+                    CreateJournalLine(GenJournalLine, GenJournalBatch, LoanMaster, -TransactionAmount, false, PostingDate);
                 end;
         end;
 
-        exit(true);
+        // Post or prepare the journal
+        exit(PostOrPrepareJournal(GenJournalBatch, PrepareOnly));
     end;
 
-    local procedure ProcessEntry(var LoanMaster: Record "Loan Master"; Amount: Decimal; IsBankEntry: Boolean; PostingDate: Date; PrepareOnly: Boolean; var GenJournalBatch: Record "Gen. Journal Batch"): Boolean
-    var
-        GenJournalLine: Record "Gen. Journal Line";
-        GenJnlPostLine: Codeunit "Gen. Jnl.-Post Line";
-        ErrorText: Text;
-    begin
-        // Initialize journal line
-        InitializeGenJournalLine(GenJournalLine, GenJournalBatch, LoanMaster, Amount, IsBankEntry, PostingDate);
-
-        if PrepareOnly then
-            GenJnlPostLine.RunWithCheck(GenJournalLine)
-        else begin
-            if not GenJnlPostLine.Run(GenJournalLine) then begin
-                ErrorText := StrSubstNo('Failed to post journal line with Document No. %1 on Posting Date %2', GenJournalLine."Document No.", PostingDate);
-                Message(ErrorText);
-                exit(false);
-            end;
-        end;
-
-        exit(true);
-    end;
-
-    local procedure InitializeGenJournalLine(var GenJournalLine: Record "Gen. Journal Line"; GenJournalBatch: Record "Gen. Journal Batch"; LoanMaster: Record "Loan Master"; Amount: Decimal; IsBankEntry: Boolean; PostingDate: Date)
+    local procedure CreateJournalLine(var GenJournalLine: Record "Gen. Journal Line"; GenJournalBatch: Record "Gen. Journal Batch"; LoanMaster: Record "Loan Master"; Amount: Decimal; IsBankEntry: Boolean; PostingDate: Date)
     begin
         GenJournalLine.Init();
         GenJournalLine.Validate("Journal Template Name", GenJournalBatch."Journal Template Name");
@@ -95,6 +76,31 @@ codeunit 50104 "Loan Journal Posting"
         GenJournalLine.Validate(Amount, Amount);
         GenJournalLine.Validate(Description, StrSubstNo('Loan %1', Amount > 0 ? 'Disbursement' : 'Repayment'));
         GenJournalLine.Insert(true);
+    end;
+
+    local procedure PostOrPrepareJournal(GenJournalBatch: Record "Gen. Journal Batch"; PrepareOnly: Boolean): Boolean
+    var
+        GenJournalLine: Record "Gen. Journal Line";
+        GenJnlPostBatch: Codeunit "Gen. Jnl.-Post Batch";
+    begin
+        GenJournalLine.SetRange("Journal Template Name", GenJournalBatch."Journal Template Name");
+        GenJournalLine.SetRange("Journal Batch Name", GenJournalBatch.Name);
+
+        if PrepareOnly then begin
+            // Just validate the lines
+            if GenJournalLine.FindSet() then
+                repeat
+                    GenJournalLine.Modify(true);
+                until GenJournalLine.Next() = 0;
+        end else begin
+            // Post the journal
+            if not GenJnlPostBatch.Run(GenJournalLine) then begin
+                Message('Failed to post the journal. Please check the error log for details.');
+                exit(false);
+            end;
+        end;
+
+        exit(true);
     end;
 
     local procedure GetNextLineNo(var GenJournalLine: Record "Gen. Journal Line"): Integer
