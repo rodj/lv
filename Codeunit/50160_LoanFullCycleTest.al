@@ -97,7 +97,7 @@ codeunit 50160 "Loan Full Cycle Test"
         DocumentNo := Util.LoanDocNo(LoanMaster."Loan ID");
 
         // Test disbursement preparation
-        Assert.IsTrue(LoanJournalPosting.PostLoanDisbursement(LoanMaster, LoanMaster."Loan Amount", WorkDate), 'Failed to prepare loan disbursement');
+        Assert.IsTrue(LoanJournalPosting.LoanDisbursementPrepareEntries(LoanMaster, LoanMaster."Loan Amount", WorkDate), 'Failed to prepare loan disbursement');
 
         // Verify and modify prepared journal entries
         GenJournalLine.SetRange("Journal Template Name", 'GENERAL');

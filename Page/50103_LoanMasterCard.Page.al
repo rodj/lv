@@ -133,7 +133,7 @@ page 50103 "Loan Master Card"
 
                     if Rec.ValidateLoanMasterRecord() then begin
                         ClearLastError();
-                        if not LoanJournalPosting.PostLoanDisbursement(Rec, Rec."Loan Amount", WorkDate()) then begin
+                        if not LoanJournalPosting.LoanDisbursementPrepareEntries(Rec, Rec."Loan Amount", WorkDate()) then begin
                             ErrorText := GetLastErrorText();
                             if ErrorText = '' then
                                 ErrorText := 'Unknown error occurred during loan disbursement posting.';
@@ -143,22 +143,6 @@ page 50103 "Loan Master Card"
                     end else begin
                         Message('Unable to disburse');
                     end;
-                end;
-            }
-            action(SimTest)
-            {
-                ApplicationArea = All;
-                Caption = 'SimTest';
-                Image = Item;
-                Promoted = true;
-                PromotedCategory = Process;
-                PromotedIsBig = true;
-
-                trigger OnAction()
-                var
-                    ManualLoanPosting: Codeunit "Loan Full Cycle Simulate Test";
-                begin
-                    ManualLoanPosting.LoanFullCycle_TEST();
                 end;
             }
         }

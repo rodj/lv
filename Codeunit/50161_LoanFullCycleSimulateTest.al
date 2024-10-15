@@ -95,7 +95,6 @@ codeunit 50161 "Loan Full Cycle Simulate Test"
     procedure TestLoanDisbursement()
     var
         GenJournalLine: Record "Gen. Journal Line";
-        TempGenJournalLine: Record "Gen. Journal Line" temporary;
         GenJnlPost: Codeunit "Gen. Jnl.-Post";
         GLEntry: Record "G/L Entry";
         BankAccountLedgerEntry: Record "Bank Account Ledger Entry";
@@ -103,42 +102,11 @@ codeunit 50161 "Loan Full Cycle Simulate Test"
         BankAccount: Record "Bank Account";
         InitialGLBalance: Decimal;
         InitialBankBalance: Decimal;
-        ErrorText: Text;
         EntryCount: Integer;
         DocumentNo: Text;
         Result: Boolean;
     begin
         DocumentNo := Util.LoanDocNo(LoanMaster."Loan ID");
-
-        Result := LoanJournalPosting.PostLoanDisbursement(LoanMaster, LoanMaster."Loan Amount", WorkDate);
-
-        if not Result then begin
-            Cleanup('Failed to prepare loan disbursement');
-            exit;
-        end;
-
-        // Verify and modify prepared journal entries
-        GenJournalLine.SetRange("Journal Template Name", 'GENERAL');
-        GenJournalLine.SetRange("Journal Batch Name", 'DAILY');
-        GenJournalLine.SetRange("Posting Date", WorkDate);
-        GenJournalLine.SetRange("Document No.", DocumentNo);
-        EntryCount := GenJournalLine.Count();
-        EntryCount := GenJournalLine.Count();
-
-        if GenJournalLine.FindSet() then
-            repeat
-                TempGenJournalLine := GenJournalLine;
-                TempGenJournalLine.Insert();
-                GenJournalLine.Validate("Document No.", DocumentNo);
-                GenJournalLine.Validate("Bal. Account Type", GenJournalLine."Bal. Account Type"::"G/L Account");
-                GenJournalLine.Validate("Bal. Account No.", '');
-                GenJournalLine.Modify(true);
-            until GenJournalLine.Next() = 0;
-
-        ErrorText := LogJournalLineDetails(GenJournalLine);
-
-        //CODEUNIT.Run(CODEUNIT::"Gen. Jnl.-Post", GenJournalLine);
-        GenJnlPost.Run(GenJournalLine);
 
         // Get initial balances
         GLAccount.Get(LoanAccountNo);
@@ -148,32 +116,65 @@ codeunit 50161 "Loan Full Cycle Simulate Test"
         BankAccount.CalcFields("Balance (LCY)");
         InitialBankBalance := BankAccount."Balance (LCY)";
 
+        // Prepare journal entries
+        Result := LoanJournalPosting.LoanDisbursementPrepareEntries(LoanMaster, LoanMaster."Loan Amount", WorkDate);
+        if not Result then begin
+            Cleanup('Failed to prepare loan disbursement journal entries');
+            exit;
+        end;
+
+        // Post the prepared journal entries
+        GenJournalLine.SetRange("Journal Template Name", 'GENERAL');
+        GenJournalLine.SetRange("Journal Batch Name", 'DAILY');
+        GenJournalLine.SetRange("Posting Date", WorkDate);
+        GenJournalLine.SetRange("Document No.", DocumentNo);
+        if GenJournalLine.FindSet() then begin
+            if not GenJnlPost.Run(GenJournalLine) then begin
+                Cleanup('Failed to post prepared journal entries');
+                exit;
+            end;
+        end else begin
+            Cleanup('No journal entries found to post');
+            exit;
+        end;
+
         // Verify G/L Entries
         GLEntry.SetRange("Posting Date", WorkDate);
         GLEntry.SetRange("Document No.", DocumentNo);
         EntryCount := GLEntry.Count();
-        if EntryCount <> 22 then begin
+        if EntryCount <> 2 then begin
             Cleanup('Incorrect number of G/L entries');
             exit;
         end;
-
         GLEntry.FindFirst();
-        //todotestcodeAssert.AreEqual(LoanMaster."Loan Amount", GLEntry.Amount, 'Incorrect G/L Entry amount');
 
         // Verify Bank Account Ledger Entry
-        BankAccountLedgerEntry.SetRange("Posting Date", LoanMaster."Start Date");
+        BankAccountLedgerEntry.SetRange("Posting Date", WorkDate);
         BankAccountLedgerEntry.SetRange("Bank Account No.", CheckingAccountNo);
-        //todotestcodeAssert.RecordCount(BankAccountLedgerEntry, 1);
-        BankAccountLedgerEntry.FindFirst();
-        //todotestcodeAssert.AreEqual(-LoanMaster."Loan Amount", BankAccountLedgerEntry.Amount, 'Incorrect Bank Account Ledger Entry amount');
+        if not BankAccountLedgerEntry.FindFirst() then begin
+            Cleanup('No Bank Account Ledger Entry found');
+            exit;
+        end;
 
         // Verify account balances have changed
         GLAccount.Get(LoanAccountNo);
         GLAccount.CalcFields("Balance at Date");
-        //todotestcodeAssert.AreEqual(InitialGLBalance + LoanMaster."Loan Amount", GLAccount."Balance at Date", 'Incorrect G/L Account balance after posting');
+        if GLAccount."Balance at Date" <> InitialGLBalance + LoanMaster."Loan Amount" then begin
+            Cleanup(StrSubstNo('Incorrect G/L Account balance after posting. Expected %1, found %2',
+                               InitialGLBalance + LoanMaster."Loan Amount", GLAccount."Balance at Date"));
+            exit;
+        end;
+
         BankAccount.Get(CheckingAccountNo);
         BankAccount.CalcFields("Balance (LCY)");
-        //todotestcodeAssert.AreEqual(InitialBankBalance - LoanMaster."Loan Amount", BankAccount."Balance (LCY)", 'Incorrect Bank Account balance after posting');
+        if BankAccount."Balance (LCY)" <> InitialBankBalance - LoanMaster."Loan Amount" then begin
+            Cleanup(StrSubstNo('Incorrect Bank Account balance after posting. Expected %1, found %2',
+                               InitialBankBalance - LoanMaster."Loan Amount", BankAccount."Balance (LCY)"));
+            exit;
+        end;
+
+        // If we reach here, all checks passed
+        Message('Loan disbursement test completed successfully');
     end;
 
     procedure LogJournalLineDetails(var GenJournalLine: Record "Gen. Journal Line"): Text
@@ -223,10 +224,11 @@ codeunit 50161 "Loan Full Cycle Simulate Test"
         GenJournalLine: Record "Gen. Journal Line";
         GenJournalBatch: Record "Gen. Journal Batch";
         GenJournalTemplate: Record "Gen. Journal Template";
+        GLSetup: Record "General Ledger Setup";
     begin
         WorkDate := DMY2Date(18, 11, 2023);
 
-        LoanId := 'T0819'; // ~id
+        LoanId := 'T1149'; // ~id
         CustomerNo := 'C00010';
         CheckingAccountNo := Util.CheckingAccountNo();
         LoanAccountNo := Util.LoanAccountNo();
@@ -257,6 +259,11 @@ codeunit 50161 "Loan Full Cycle Simulate Test"
             GenJournalBatch.Description := 'Default Batch';
             GenJournalBatch.Insert();
         end;
+
+        GLSetup.Get();
+        GLSetup."Allow Posting From" := DMY2Date(1, 1, 2023);
+        GLSetup."Allow Posting To" := DMY2Date(31, 12, 2024);
+        GLSetup.Modify();
     end;
 
     local procedure CreateLoanMaster(var LoanMaster: Record "Loan Master"; LoanID: Text)

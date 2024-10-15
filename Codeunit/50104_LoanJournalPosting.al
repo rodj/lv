@@ -46,7 +46,10 @@ codeunit 50104 "Loan Journal Posting"
         exit(true);
     end;
 
-    procedure PostLoanDisbursement(LoanMaster: Record "Loan Master"; DisbursementAmount: Decimal; PostingDate: Date): Boolean
+    /// <summary>
+    /// Prepares, but does not Post, journal entries for loan disbursement
+    /// </summary>
+    procedure LoanDisbursementPrepareEntries(LoanMaster: Record "Loan Master"; DisbursementAmount: Decimal; PostingDate: Date): Boolean
     var
         GenJournalLine: Record "Gen. Journal Line";
         GenJournalBatch: Record "Gen. Journal Batch";
