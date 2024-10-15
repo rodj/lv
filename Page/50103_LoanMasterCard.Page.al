@@ -128,12 +128,14 @@ page 50103 "Loan Master Card"
                 trigger OnAction()
                 var
                     LoanJournalPosting: Codeunit "Loan Journal Posting";
+                    PrepareOnly: Boolean;
                     ErrorText: Text;
                 begin
 
                     if Rec.ValidateLoanMasterRecord() then begin
                         ClearLastError();
-                        if not LoanJournalPosting.LoanDisbursementPrepareEntries(Rec, Rec."Loan Amount", WorkDate()) then begin
+                        PrepareOnly := true;
+                        if not LoanJournalPosting.LoanDisbursementHandleEntries(PrepareOnly, Rec, Rec."Loan Amount", WorkDate()) then begin
                             ErrorText := GetLastErrorText();
                             if ErrorText = '' then
                                 ErrorText := 'Unknown error occurred during loan disbursement posting.';

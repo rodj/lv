@@ -9,7 +9,7 @@
             "request": "launch",
             "type": "al",
             "environmentType": "Sandbox",
-            "server": "http://BC3",
+            "server": "http://BC7",
             "serverInstance": "BC",
             "authentication": "UserPassword",
             "startupObjectType": "Page",

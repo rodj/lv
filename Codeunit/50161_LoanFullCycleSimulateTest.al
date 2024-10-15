@@ -95,7 +95,7 @@ codeunit 50161 "Loan Full Cycle Simulate Test"
     procedure TestLoanDisbursement()
     var
         GenJournalLine: Record "Gen. Journal Line";
-        GenJnlPost: Codeunit "Gen. Jnl.-Post";
+        PostJournalEntries: Codeunit "Post Journal Entries";
         GLEntry: Record "G/L Entry";
         BankAccountLedgerEntry: Record "Bank Account Ledger Entry";
         GLAccount: Record "G/L Account";
@@ -117,7 +117,7 @@ codeunit 50161 "Loan Full Cycle Simulate Test"
         InitialBankBalance := BankAccount."Balance (LCY)";
 
         // Prepare journal entries
-        Result := LoanJournalPosting.LoanDisbursementPrepareEntries(LoanMaster, LoanMaster."Loan Amount", WorkDate);
+        Result := LoanJournalPosting.LoanDisbursementHandleEntries(false, LoanMaster, LoanMaster."Loan Amount", WorkDate);
         if not Result then begin
             Cleanup('Failed to prepare loan disbursement journal entries');
             exit;
@@ -128,8 +128,11 @@ codeunit 50161 "Loan Full Cycle Simulate Test"
         GenJournalLine.SetRange("Journal Batch Name", 'DAILY');
         GenJournalLine.SetRange("Posting Date", WorkDate);
         GenJournalLine.SetRange("Document No.", DocumentNo);
+        EntryCount := GenJournalLine.Count();
+
         if GenJournalLine.FindSet() then begin
-            if not GenJnlPost.Run(GenJournalLine) then begin
+            Commit();  // Commit the transaction before calling the new codeunit
+            if not PostJournalEntries.PostJournalEntries(GenJournalLine) then begin
                 Cleanup('Failed to post prepared journal entries');
                 exit;
             end;
@@ -228,7 +231,7 @@ codeunit 50161 "Loan Full Cycle Simulate Test"
     begin
         WorkDate := DMY2Date(18, 11, 2023);
 
-        LoanId := 'T1149'; // ~id
+        LoanId := 'T1214'; // ~id
         CustomerNo := 'C00010';
         CheckingAccountNo := Util.CheckingAccountNo();
         LoanAccountNo := Util.LoanAccountNo();

@@ -97,33 +97,7 @@ codeunit 50160 "Loan Full Cycle Test"
         DocumentNo := Util.LoanDocNo(LoanMaster."Loan ID");
 
         // Test disbursement preparation
-        Assert.IsTrue(LoanJournalPosting.LoanDisbursementPrepareEntries(LoanMaster, LoanMaster."Loan Amount", WorkDate), 'Failed to prepare loan disbursement');
-
-        // Verify and modify prepared journal entries
-        GenJournalLine.SetRange("Journal Template Name", 'GENERAL');
-        GenJournalLine.SetRange("Journal Batch Name", 'DAILY');
-        GenJournalLine.SetRange("Posting Date", WorkDate);
-        GenJournalLine.SetRange("Document No.", DocumentNo);
-        EntryCount := GenJournalLine.Count();
-        EntryCount := GenJournalLine.Count();
-
-        if GenJournalLine.FindSet() then
-            repeat
-                TempGenJournalLine := GenJournalLine;
-                TempGenJournalLine.Insert();
-                GenJournalLine.Validate("Document No.", DocumentNo);
-                GenJournalLine.Validate("Bal. Account Type", GenJournalLine."Bal. Account Type"::"G/L Account");
-                GenJournalLine.Validate("Bal. Account No.", '');
-                GenJournalLine.Modify(true);
-            until GenJournalLine.Next() = 0;
-
-        Commit();
-
-        EntryCount := GenJournalLine.Count();
-        EntryCount := TempGenJournalLine.Count();
-
-        // Log journal line details
-        LogJournalLineDetails(GenJournalLine);
+        Assert.IsTrue(LoanJournalPosting.LoanDisbursementHandleEntries(false, LoanMaster, LoanMaster."Loan Amount", WorkDate), 'Failed to prepare loan disbursement');
 
         // Because never could get GenJnlPost.Run(GenJournalLine); to run due to UI Confirm error
         exit;
