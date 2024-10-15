@@ -1,0 +1,10 @@
+# Top-most EditorConfig file
+root = true
+
+[*.al]
+indent_style = space
+indent_size = 4
+
+[*.json]
+indent_style = space
+indent_size = 4

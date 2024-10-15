@@ -1,0 +1,25 @@
+version: '3.7'
+services:
+  bc2:
+    image: mcr.microsoft.com/businesscentral/onprem:onprem-us
+    container_name: bc2
+    environment:
+      - ACCEPT_EULA=Y
+      - ASSIGN_PREMIUM_PLAN=Y
+      - AUTH=NavUserPassword
+      - SA_PASSWORD=password
+      - USESSL=N
+    ports:
+      - "8080:8080"
+      - "7049:7049"
+      - "7048:7048"
+      - "443:443"
+    mem_limit: 6G
+    networks:
+      mynetwork:
+        ipv4_address: 172.18.0.22
+networks:
+  mynetwork:
+    ipam:
+      config:
+        - subnet: 172.18.0.0/16
