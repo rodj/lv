@@ -60,6 +60,8 @@ codeunit 50104 "Loan Journal Posting"
         if not LoanMaster.ValidateLoanMasterRecord() then
             exit(false);
 
+        Util.GL_Setup();
+
         // Check G/L Setup for allowed posting dates
         GLSetup.Get();
         if (PostingDate < GLSetup."Allow Posting From") or (PostingDate > GLSetup."Allow Posting To") then begin

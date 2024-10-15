@@ -9,7 +9,7 @@
             "request": "launch",
             "type": "al",
             "environmentType": "Sandbox",
-            "server": "http://BC7",
+            "server": "http://buscent",
             "serverInstance": "BC",
             "authentication": "UserPassword",
             "startupObjectType": "Page",

@@ -10,5 +10,6 @@ http://buscent/BC/?tenant=default
 
 
 # Business Central Setup
+Login: admin/password  
 Search (Alt+Q) for "Extension Management"
 Install 'Any' and 'Library Assert' by click on 3 dots, install

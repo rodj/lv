@@ -133,6 +133,7 @@ page 50103 "Loan Master Card"
                 begin
 
                     if Rec.ValidateLoanMasterRecord() then begin
+
                         ClearLastError();
                         PrepareOnly := true;
                         if not LoanJournalPosting.LoanDisbursementHandleEntries(PrepareOnly, Rec, Rec."Loan Amount", WorkDate()) then begin

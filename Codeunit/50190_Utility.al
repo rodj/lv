@@ -106,6 +106,7 @@ codeunit 50190 Utility
         LoanJournalPosting: Codeunit "Loan Journal Posting";
         GLSetup: Record "General Ledger Setup";
     begin
+        GL_Setup();
         Initialize();
         //CreateLoanMaster(LoanMaster);
         LoanMaster.Get('RODJ ONE');
@@ -113,18 +114,23 @@ codeunit 50190 Utility
         EnsureOpenAccountingPeriod(PostingDate);
         RepaymentAmount := 456.78;
 
-        // Ensure the posting date is within the allowed range
-        GLSetup.Get();
-        GLSetup."Allow Posting From" := DMY2Date(1, 1, 2023);
-        GLSetup."Allow Posting To" := DMY2Date(31, 12, 2023);
-        GLSetup.Modify();
-
         // Display current G/L Setup
         //Message('Allow Posting From: %1, Allow Posting To: %2', GLSetup."Allow Posting From", GLSetup."Allow Posting To");
 
         Result := LoanJournalPosting.PostLoanRepayment(LoanMaster, RepaymentAmount, PostingDate);
 
         VerifyJournalEntries(LoanMaster."Loan ID", RepaymentAmount, PostingDate);
+    end;
+
+    procedure GL_Setup()
+    var
+        GLSetup: Record "General Ledger Setup";
+    begin
+        // Ensure the posting date is within the allowed range
+        GLSetup.Get();
+        GLSetup."Allow Posting From" := DMY2Date(1, 1, 2015);
+        GLSetup."Allow Posting To" := DMY2Date(31, 12, 2024);
+        GLSetup.Modify();
     end;
 
     local procedure Initialize()
