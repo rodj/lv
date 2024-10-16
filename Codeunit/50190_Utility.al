@@ -11,6 +11,13 @@ codeunit 50190 Utility
         exit('CHECKING');
     end;
 
+    procedure ClearAllLogs()
+    var
+        MyLog: Record "MyLog";
+    begin
+        MyLog.DeleteAll();
+    end;
+
     procedure CreateLoanMaster(var LoanMaster: Record "Loan Master"; LoanID: Text)
     begin
         LoanMaster.Init();
@@ -57,6 +64,28 @@ codeunit 50190 Utility
         end;
         AccountingPeriod.SetRange("Starting Date", AccountingPeriod."Starting Date", PostingDate);
         AccountingPeriod.ModifyAll(Closed, false);
+    end;
+
+    procedure GetAllLogs(): Text
+    var
+        MyLog: Record "MyLog";
+        LogText: Text;
+        CR: Text[2];
+    begin
+        CR := CrLf();
+
+        if MyLog.FindSet() then
+            repeat
+                LogText += StrSubstNo('%1 | %2 | %3%4',
+                                      Format(MyLog.CreateDate, 0, '<Year4>-<Month,2>-<Day,2> <Hours24,2>:<Minutes,2>:<Seconds,2>'),
+                                      MyLog.SrcPrc,
+                                      MyLog.Message,
+                                      CR);
+            until MyLog.Next() = 0
+        else
+            LogText := 'No log entries found.' + CR;
+
+        exit(LogText);
     end;
 
     /// <summary>
