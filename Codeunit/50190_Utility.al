@@ -18,6 +18,15 @@ codeunit 50190 Utility
         LoanMaster.Insert();
     end;
 
+    procedure CrLf(): Text
+    var
+        S: Text[2];
+    begin
+        S[1] := 13;
+        S[2] := 10;
+        exit(S);
+    end;
+
     procedure DisplayOpenAccountingPeriods()
     var
         AccountingPeriod: Record "Accounting Period";
@@ -73,15 +82,15 @@ codeunit 50190 Utility
         exit('LRQ-' + loanId);
     end;
 
-    procedure Log()
+    procedure Log(message: Text; srcPrc: Text)
     var
         logRec: Record MyLog;
     begin
         logRec.Init();
         logRec.Id := 0;  // AutoIncrement
         logRec.CreateDate := CurrentDateTime;
-        logRec.SrcPrc := 'SourceProcedure';
-        logRec.Message := 'LogMessage';
+        logRec.SrcPrc := srcPrc;
+        logRec.Message := message;
         logRec.Insert(true);
     end;
 

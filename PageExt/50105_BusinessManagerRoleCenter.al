@@ -35,7 +35,7 @@ pageextension 50105 "Business Manager RC Ext" extends "Business Manager Role Cen
                     ApplicationArea = All;
                     Caption = 'Log';
                     ToolTip = 'Custom Log';
-                    RunObject = Page "Log List";
+                    RunObject = Page "MyLog List";
                 }
             }
         }
