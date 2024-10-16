@@ -81,11 +81,17 @@ page 50103 "Loan Master Card"
 
                 trigger OnAction()
                 var
+                    Loan: Codeunit "Loan Journal Posting";
                     LoanCalc: Codeunit "Loan Calculations";
                     LoanJournalPosting: Codeunit "Loan Journal Posting";
                     PaymentInputPage: Page "PaymentInputPage";
                     UserInputPaymentAmount: Decimal;
                     ErrorText: Text;
+                    PrepareOnly: Boolean;
+                    Result: Boolean;
+                    TransActionType: Enum "Loan Transaction Type";
+                    Util: Codeunit "Utility";
+                    S: Text;
                 begin
                     if Rec."Monthly Payment" <= 0 then
                         LoanCalc.UpdateLoanCalculation(Rec);
@@ -102,16 +108,19 @@ page 50103 "Loan Master Card"
                         if Rec.Modify(true) then;
                         Commit();
 
-                        //Message(Format(WorkDate()));
-                        ClearLastError();
-                        if not LoanJournalPosting.PostLoanRepayment(Rec, UserInputPaymentAmount, WorkDate()) then begin
+                        PrepareOnly := true;
+                        TransActionType := "Loan Transaction Type"::Repayment;
+                        // procedure ProcessLoanTransaction(var LoanMaster: Record "Loan Master"; TransactionAmount: Decimal; PostingDate: Date; TransactionType: Option Disbursement,Repayment; PrepareOnly: Boolean): Boolean
+                        Result := Loan.ProcessLoanTransaction(Rec, UserInputPaymentAmount, WorkDate, TransactionType, PrepareOnly);
+
+                        if Result then
+                            Message('Journal entries have been prepared (but not posted) for loan repayment of %1', UserInputPaymentAmount)
+                        else begin
                             ErrorText := GetLastErrorText();
                             if ErrorText = '' then
-                                ErrorText := 'Unknown error occurred during loan repayment posting.';
-                            Error('Failed to post loan repayment. Error: %1', ErrorText);
-                        end
-                        else
-                            Message('Journal entries for payment of %1 are ready for posting', UserInputPaymentAmount);
+                                ErrorText := 'Unknown error occurred during loan disbursement posting.';
+                            Error('Failed to post loan disbursement. Error: %1', ErrorText);
+                        end;
                     end;
                 end;
             }
@@ -139,7 +148,7 @@ page 50103 "Loan Master Card"
 
                         ClearLastError();
 
-                        PrepareOnly := true;
+                        PrepareOnly := false;
                         TransActionType := "Loan Transaction Type"::Disbursement;
                         // procedure ProcessLoanTransaction(var LoanMaster: Record "Loan Master"; TransactionAmount: Decimal; PostingDate: Date; TransactionType: Option Disbursement,Repayment; PrepareOnly: Boolean): Boolean
                         Result := Loan.ProcessLoanTransaction(Rec, Rec."Loan Amount", WorkDate, TransactionType, PrepareOnly);
