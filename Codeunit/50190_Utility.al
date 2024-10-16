@@ -99,6 +99,36 @@ codeunit 50190 Utility
         logRec.Insert(true);
     end;
 
+    /// <summary>
+    /// Returns a formatted string of the current day, hour, and minute
+    /// Example: for Jan 1, 2024 at 3:37pm, returns '011537'
+    /// </summary>
+    procedure DayHourMinuteString(): Text
+    var
+        CurrentDateTime: DateTime;
+        CurrentDate: Date;
+        CurrentTime: Time;
+        FormattedString: Text[6];
+        DayStr: Text[2];
+        HourStr: Text[2];
+        MinuteStr: Text[2];
+    begin
+        CurrentDateTime := CurrentDateTime();
+        CurrentDate := DT2Date(CurrentDateTime); // Convert DateTime to Date
+        CurrentTime := DT2Time(CurrentDateTime); // Convert DateTime to Time
+
+        // Extract and format the day, hour, and minute
+        DayStr := PadStr(Format(Date2DMY(CurrentDate, 1)), 2, '0');            // 2-digit day of the month with leading zero
+        HourStr := PadStr(Format(CurrentTime, 0, '<Hours24>'), 2, '0');        // 2-digit hour (24-hour format) with leading zero
+        MinuteStr := PadStr(Format(CurrentTime, 0, '<Minutes>'), 2, '0');      // 2-digit minute with leading zero
+
+        // Combine into the final format DDHHmm
+        FormattedString := DayStr + HourStr + MinuteStr;
+
+        exit(FormattedString);
+    end;
+
+
     procedure RandomDecimal(minVal: Decimal; maxVal: Decimal): Decimal
     var
         maxRand: Integer;

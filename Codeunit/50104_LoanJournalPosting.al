@@ -178,7 +178,7 @@ codeunit 50104 "Loan Journal Posting"
             exit(10000);
     end;
 
-    local procedure FindDefaultJournalBatch(var GenJournalBatch: Record "Gen. Journal Batch"): Boolean
+    procedure FindDefaultJournalBatch(var GenJournalBatch: Record "Gen. Journal Batch"): Boolean
     var
         GenJournalTemplate: Record "Gen. Journal Template";
     begin

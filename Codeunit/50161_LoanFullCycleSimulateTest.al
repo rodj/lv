@@ -25,31 +25,261 @@ codeunit 50161 "Loan Full Cycle Simulate Test"
 
     procedure LoanFullCycle_TEST()
     begin
+        Util.Log('BEGIN: Manual Loan full test');
+
         Initialize();
 
         CreateValidLoan(LoanId, CustomerNo, LoanAmount, InterestRate, TermMonths, StartDate);
 
         TestLoanDisbursement();
 
-        TestLoanRepayment();
+        TestLoanRepayment(56.78);
+
+        Util.Log('SUCCESS: Manual Loan full test');
 
         Cleanup('');
     end;
 
-    procedure TestLoanRepayment()
+    /// <summary>
+    /// TODO: Refactor to eliminate duplicated code with TestLoanRepayment
+    /// </summary>
+    procedure TestLoanDisbursement()
+    var
+        GenJournalLine: Record "Gen. Journal Line";
+        PostJournalEntries: Codeunit "Post Journal Entries";
+        GLEntry: Record "G/L Entry";
+        BankAccountLedgerEntry: Record "Bank Account Ledger Entry";
+        GenJournalBatch: Record "Gen. Journal Batch";
+        GLAccount: Record "G/L Account";
+        BankAccount: Record "Bank Account";
+        InitialGLBalance: Decimal;
+        InitialBankBalance: Decimal;
+        EntryCount: Integer;
+        DocumentNo: Text;
+        Result: Boolean;
+        PrepareOnly: Boolean;
+    begin
+        DocumentNo := Util.LoanDocNo(LoanMaster."Loan ID");
+
+        // Get initial balances
+        GLAccount.Get(LoanAccountNo);
+        GLAccount.CalcFields("Balance at Date");
+        InitialGLBalance := GLAccount."Balance at Date";
+        BankAccount.Get(CheckingAccountNo);
+        BankAccount.CalcFields("Balance (LCY)");
+        InitialBankBalance := BankAccount."Balance (LCY)";
+
+        // Prepare journal entries
+        PrepareOnly := true;
+        Result := LoanJournalPosting.LoanDisbursementHandleEntries(PrepareOnly, LoanMaster, LoanMaster."Loan Amount", WorkDate);
+        if not Result then begin
+            Cleanup('Failed to prepare loan disbursement journal entries');
+            exit;
+        end;
+
+        // Find the correct journal batch
+        if not LoanJournalPosting.FindDefaultJournalBatch(GenJournalBatch) then begin
+            Cleanup('Failed to find default journal batch');
+            exit;
+        end;
+
+        // Post the prepared journal entries
+        GenJournalLine.SetRange("Journal Template Name", GenJournalBatch."Journal Template Name");
+        GenJournalLine.SetRange("Journal Batch Name", GenJournalBatch.Name);
+        GenJournalLine.SetRange("Posting Date", WorkDate);
+        GenJournalLine.SetRange("Document No.", DocumentNo);
+        GenJournalLine.SetFilter(Amount, '<>0');
+
+        EntryCount := GenJournalLine.Count();
+        if EntryCount = 0 then begin
+            Cleanup(StrSubstNo('No journal entries found to post. Template: %1, Batch: %2, Date: %3, Document No: %4',
+                            GenJournalBatch."Journal Template Name", GenJournalBatch.Name, WorkDate, DocumentNo));
+            exit;
+        end;
+
+        if GenJournalLine.FindSet() then begin
+            Commit();  // Commit the transaction before posting
+            CODEUNIT.RUN(CODEUNIT::"Gen. Jnl.-Post Batch", GenJournalLine);
+            if GetLastErrorText() <> '' then begin
+                Cleanup(StrSubstNo('Failed to post prepared journal entries. Error: %1', GetLastErrorText()));
+                exit;
+            end;
+        end else begin
+            Cleanup('No journal entries found to post after FindSet');
+            exit;
+        end;
+
+        // Verify G/L Entries
+        GLEntry.SetRange("Posting Date", WorkDate);
+        GLEntry.SetRange("Document No.", DocumentNo);
+        EntryCount := GLEntry.Count();
+        if GLEntry.FindSet() then
+            repeat
+                Util.Log(StrSubstNo('G/L Entry: Account No.=%1, Posting Date=%2, Document No.=%3, Amount=%4, Description=%5',
+                                    GLEntry."G/L Account No.",
+                                    Format(GLEntry."Posting Date"),
+                                    GLEntry."Document No.",
+                                    Format(GLEntry.Amount),
+                                    GLEntry.Description), 'TestLoanDisbursement');
+            until GLEntry.Next() = 0
+        else
+            Util.Log('No G/L entries found matching the criteria', 'TestLoanDisbursement');
+
+        if EntryCount <> 2 then begin
+            Cleanup('Incorrect number of G/L entries');
+            exit;
+        end;
+        GLEntry.FindFirst();
+
+        // Verify Bank Account Ledger Entry
+        BankAccountLedgerEntry.SetRange("Posting Date", WorkDate);
+        BankAccountLedgerEntry.SetRange("Bank Account No.", CheckingAccountNo);
+        if not BankAccountLedgerEntry.FindFirst() then begin
+            Cleanup('No Bank Account Ledger Entry found');
+            exit;
+        end;
+
+        // Verify account balances have changed
+        GLAccount.Get(LoanAccountNo);
+        GLAccount.CalcFields("Balance at Date");
+        if GLAccount."Balance at Date" <> InitialGLBalance + LoanMaster."Loan Amount" then begin
+            Cleanup(StrSubstNo('Incorrect G/L Account balance after posting. Expected %1, found %2',
+                               InitialGLBalance + LoanMaster."Loan Amount", GLAccount."Balance at Date"));
+            exit;
+        end;
+
+        BankAccount.Get(CheckingAccountNo);
+        BankAccount.CalcFields("Balance (LCY)");
+        if BankAccount."Balance (LCY)" <> InitialBankBalance - LoanMaster."Loan Amount" then begin
+            Cleanup(StrSubstNo('Incorrect Bank Account balance after posting. Expected %1, found %2',
+                               InitialBankBalance - LoanMaster."Loan Amount", BankAccount."Balance (LCY)"));
+            exit;
+        end;
+
+        // If we reach here, all checks passed
+        Message('Loan disbursement test completed successfully');
+    end;
+
+    procedure TestLoanRepayment(RepaymentAmount: Decimal)
     var
         GenJournalLine: Record "Gen. Journal Line";
         GLEntry: Record "G/L Entry";
+        BankAccountLedgerEntry: Record "Bank Account Ledger Entry";
+        GenJournalBatch: Record "Gen. Journal Batch";
+        GLAccount: Record "G/L Account";
+        BankAccount: Record "Bank Account";
+        InitialGLBalance: Decimal;
+        InitialBankBalance: Decimal;
+        EntryCount: Integer;
+        DocumentNo: Text;
         Result: Boolean;
+        PrepareOnly: Boolean;
     begin
-        // Test repayment preparation
-        Result := LoanJournalPosting.PostLoanRepayment(LoanMaster, PaymentAmount, PaymentDate);
-        if not Result then
-            Message('Failed to prepare loan repayment');
+        if RepaymentAmount <= 0 then
+            Cleanup('Repayment amount must be greater than zero.');
 
-        // Verify account balances
-        //VerifyAccountBalance(CheckingAccountNo, LoanAmount - PaymentAmount);
-        //VerifyAccountBalance(LoanAccountNo, PaymentAmount - LoanAmount);
+        if RepaymentAmount > LoanMaster."Loan Amount" then
+            Cleanup('Repayment amount cannot exceed the loan amount.');
+
+        DocumentNo := Util.LoanDocNo(LoanMaster."Loan ID");
+
+        // Get initial balances
+        GLAccount.Get(LoanAccountNo);
+        GLAccount.CalcFields("Balance at Date");
+        InitialGLBalance := GLAccount."Balance at Date";
+        BankAccount.Get(CheckingAccountNo);
+        BankAccount.CalcFields("Balance (LCY)");
+        InitialBankBalance := BankAccount."Balance (LCY)";
+
+        // Prepare journal entries
+        PrepareOnly := true;
+        Result := LoanJournalPosting.PostLoanRepayment(LoanMaster, RepaymentAmount, WorkDate);
+        if not Result then begin
+            Cleanup('Failed to prepare loan repayment journal entries');
+            exit;
+        end;
+
+        // Find the correct journal batch
+        if not LoanJournalPosting.FindDefaultJournalBatch(GenJournalBatch) then begin
+            Cleanup('Failed to find default journal batch');
+            exit;
+        end;
+
+        // Post the prepared journal entries
+        GenJournalLine.SetRange("Journal Template Name", GenJournalBatch."Journal Template Name");
+        GenJournalLine.SetRange("Journal Batch Name", GenJournalBatch.Name);
+        GenJournalLine.SetRange("Posting Date", WorkDate);
+        GenJournalLine.SetRange("Document No.", DocumentNo);
+        GenJournalLine.SetFilter(Amount, '<>0');
+
+        EntryCount := GenJournalLine.Count();
+        if EntryCount = 0 then begin
+            Cleanup(StrSubstNo('No journal entries found to post. Template: %1, Batch: %2, Date: %3, Document No: %4',
+                            GenJournalBatch."Journal Template Name", GenJournalBatch.Name, WorkDate, DocumentNo));
+            exit;
+        end;
+
+        if GenJournalLine.FindSet() then begin
+            Commit();  // Commit the transaction before posting
+            CODEUNIT.RUN(CODEUNIT::"Gen. Jnl.-Post Batch", GenJournalLine);
+            if GetLastErrorText() <> '' then begin
+                Cleanup(StrSubstNo('Failed to post prepared journal entries. Error: %1', GetLastErrorText()));
+                exit;
+            end;
+        end else begin
+            Cleanup('No journal entries found to post after FindSet');
+            exit;
+        end;
+
+        // Verify G/L Entries
+        GLEntry.SetRange("Posting Date", WorkDate);
+        GLEntry.SetRange("Document No.", DocumentNo);
+        EntryCount := GLEntry.Count();
+        if GLEntry.FindSet() then
+            repeat
+                Util.Log(StrSubstNo('G/L Entry: Account No.=%1, Posting Date=%2, Document No.=%3, Amount=%4, Description=%5',
+                                    GLEntry."G/L Account No.",
+                                    Format(GLEntry."Posting Date"),
+                                    GLEntry."Document No.",
+                                    Format(GLEntry.Amount),
+                                    GLEntry.Description), 'TestLoanRepayment');
+            until GLEntry.Next() = 0
+        else
+            Util.Log('No G/L entries found matching the criteria', 'TestLoanRepayment');
+
+        if EntryCount <> 2 then begin
+            Cleanup('Incorrect number of G/L entries');
+            exit;
+        end;
+        GLEntry.FindFirst();
+
+        // Verify Bank Account Ledger Entry
+        BankAccountLedgerEntry.SetRange("Posting Date", WorkDate);
+        BankAccountLedgerEntry.SetRange("Bank Account No.", CheckingAccountNo);
+        if not BankAccountLedgerEntry.FindFirst() then begin
+            Cleanup('No Bank Account Ledger Entry found');
+            exit;
+        end;
+
+        // Verify account balances have changed
+        GLAccount.Get(LoanAccountNo);
+        GLAccount.CalcFields("Balance at Date");
+        if GLAccount."Balance at Date" <> InitialGLBalance - RepaymentAmount then begin
+            Cleanup(StrSubstNo('Incorrect G/L Account balance after posting. Expected %1, found %2',
+                               InitialGLBalance - RepaymentAmount, GLAccount."Balance at Date"));
+            exit;
+        end;
+
+        BankAccount.Get(CheckingAccountNo);
+        BankAccount.CalcFields("Balance (LCY)");
+        if BankAccount."Balance (LCY)" <> InitialBankBalance + RepaymentAmount then begin
+            Cleanup(StrSubstNo('Incorrect Bank Account balance after posting. Expected %1, found %2',
+                               InitialBankBalance + RepaymentAmount, BankAccount."Balance (LCY)"));
+            exit;
+        end;
+
+        // If we reach here, all checks passed
+        Util.Log(StrSubstNo('Loan repayment test completed successfully for amount %1', RepaymentAmount));
     end;
 
     procedure VerifyAccountBalance(AccountNo: Code[20]; ExpectedBalance: Decimal)
@@ -90,94 +320,6 @@ codeunit 50161 "Loan Full Cycle Simulate Test"
         GLEntry.SetRange("Document No.", DocumentNo);
         EntryCount := GenJournalLine.Count();
         GLEntry.DeleteAll(true);
-    end;
-
-    procedure TestLoanDisbursement()
-    var
-        GenJournalLine: Record "Gen. Journal Line";
-        PostJournalEntries: Codeunit "Post Journal Entries";
-        GLEntry: Record "G/L Entry";
-        BankAccountLedgerEntry: Record "Bank Account Ledger Entry";
-        GLAccount: Record "G/L Account";
-        BankAccount: Record "Bank Account";
-        InitialGLBalance: Decimal;
-        InitialBankBalance: Decimal;
-        EntryCount: Integer;
-        DocumentNo: Text;
-        Result: Boolean;
-    begin
-        DocumentNo := Util.LoanDocNo(LoanMaster."Loan ID");
-
-        // Get initial balances
-        GLAccount.Get(LoanAccountNo);
-        GLAccount.CalcFields("Balance at Date");
-        InitialGLBalance := GLAccount."Balance at Date";
-        BankAccount.Get(CheckingAccountNo);
-        BankAccount.CalcFields("Balance (LCY)");
-        InitialBankBalance := BankAccount."Balance (LCY)";
-
-        // Prepare journal entries
-        Result := LoanJournalPosting.LoanDisbursementHandleEntries(false, LoanMaster, LoanMaster."Loan Amount", WorkDate);
-        if not Result then begin
-            Cleanup('Failed to prepare loan disbursement journal entries');
-            exit;
-        end;
-
-        // Post the prepared journal entries
-        GenJournalLine.SetRange("Journal Template Name", 'GENERAL');
-        GenJournalLine.SetRange("Journal Batch Name", 'DAILY');
-        GenJournalLine.SetRange("Posting Date", WorkDate);
-        GenJournalLine.SetRange("Document No.", DocumentNo);
-        EntryCount := GenJournalLine.Count();
-
-        if GenJournalLine.FindSet() then begin
-            Commit();  // Commit the transaction before calling the new codeunit
-            if not PostJournalEntries.PostJournalEntries(GenJournalLine) then begin
-                Cleanup('Failed to post prepared journal entries');
-                exit;
-            end;
-        end else begin
-            Cleanup('No journal entries found to post');
-            exit;
-        end;
-
-        // Verify G/L Entries
-        GLEntry.SetRange("Posting Date", WorkDate);
-        GLEntry.SetRange("Document No.", DocumentNo);
-        EntryCount := GLEntry.Count();
-        if EntryCount <> 2 then begin
-            Cleanup('Incorrect number of G/L entries');
-            exit;
-        end;
-        GLEntry.FindFirst();
-
-        // Verify Bank Account Ledger Entry
-        BankAccountLedgerEntry.SetRange("Posting Date", WorkDate);
-        BankAccountLedgerEntry.SetRange("Bank Account No.", CheckingAccountNo);
-        if not BankAccountLedgerEntry.FindFirst() then begin
-            Cleanup('No Bank Account Ledger Entry found');
-            exit;
-        end;
-
-        // Verify account balances have changed
-        GLAccount.Get(LoanAccountNo);
-        GLAccount.CalcFields("Balance at Date");
-        if GLAccount."Balance at Date" <> InitialGLBalance + LoanMaster."Loan Amount" then begin
-            Cleanup(StrSubstNo('Incorrect G/L Account balance after posting. Expected %1, found %2',
-                               InitialGLBalance + LoanMaster."Loan Amount", GLAccount."Balance at Date"));
-            exit;
-        end;
-
-        BankAccount.Get(CheckingAccountNo);
-        BankAccount.CalcFields("Balance (LCY)");
-        if BankAccount."Balance (LCY)" <> InitialBankBalance - LoanMaster."Loan Amount" then begin
-            Cleanup(StrSubstNo('Incorrect Bank Account balance after posting. Expected %1, found %2',
-                               InitialBankBalance - LoanMaster."Loan Amount", BankAccount."Balance (LCY)"));
-            exit;
-        end;
-
-        // If we reach here, all checks passed
-        Message('Loan disbursement test completed successfully');
     end;
 
     procedure LogJournalLineDetails(var GenJournalLine: Record "Gen. Journal Line"): Text
@@ -231,7 +373,7 @@ codeunit 50161 "Loan Full Cycle Simulate Test"
     begin
         WorkDate := DMY2Date(18, 11, 2023);
 
-        LoanId := 'T1214'; // ~id
+        LoanId := 'L' + Util.DayHourMinuteString();
         CustomerNo := 'C00010';
         CheckingAccountNo := Util.CheckingAccountNo();
         LoanAccountNo := Util.LoanAccountNo();
