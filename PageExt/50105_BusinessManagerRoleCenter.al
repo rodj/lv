@@ -20,9 +20,22 @@ pageextension 50105 "Business Manager RC Ext" extends "Business Manager Role Cen
                 action(Test)
                 {
                     ApplicationArea = All;
-                    Caption = 'Test';
+                    Caption = 'Test!';
                     ToolTip = 'Run Loan Full Cycle Test';
                     RunObject = Codeunit "Loan Full Cycle Simulate Test";
+                }
+            }
+
+            group(MyLog)
+            {
+                Caption = 'MyLog';
+
+                action(Log)
+                {
+                    ApplicationArea = All;
+                    Caption = 'Log';
+                    ToolTip = 'Custom Log';
+                    RunObject = Page "Log List";
                 }
             }
         }

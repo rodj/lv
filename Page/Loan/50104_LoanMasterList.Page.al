@@ -65,7 +65,7 @@ page 50104 "Loan Master List"
             {
                 ApplicationArea = All;
                 Caption = 'Sort by Amount (Desc)';
-                Image = Sort;
+                Image = Task;
                 Promoted = true;
                 PromotedCategory = Process;
                 PromotedIsBig = true;

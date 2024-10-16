@@ -82,6 +82,7 @@ codeunit 50104 "Loan Journal Posting"
     var
         GenJournalLine: Record "Gen. Journal Line";
         GenJnlPostBatch: Codeunit "Gen. Jnl.-Post Batch";
+        Logger: Record "MyLog";
     begin
         GenJournalLine.SetRange("Journal Template Name", GenJournalBatch."Journal Template Name");
         GenJournalLine.SetRange("Journal Batch Name", GenJournalBatch.Name);

@@ -73,6 +73,18 @@ codeunit 50190 Utility
         exit('LRQ-' + loanId);
     end;
 
+    procedure Log()
+    var
+        logRec: Record MyLog;
+    begin
+        logRec.Init();
+        logRec.Id := 0;  // AutoIncrement
+        logRec.CreateDate := CurrentDateTime;
+        logRec.SrcPrc := 'SourceProcedure';
+        logRec.Message := 'LogMessage';
+        logRec.Insert(true);
+    end;
+
     procedure RandomDecimal(minVal: Decimal; maxVal: Decimal): Decimal
     var
         maxRand: Integer;

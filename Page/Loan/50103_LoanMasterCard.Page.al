@@ -132,7 +132,10 @@ page 50103 "Loan Master Card"
                     ErrorText: Text;
                     Result: Boolean;
                     TransActionType: Enum "Loan Transaction Type";
+                    Util: Codeunit "Utility";
                 begin
+                    Util.Log();
+                    exit;
 
                     if Rec.ValidateLoanMasterRecord() then begin
 

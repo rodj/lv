@@ -16,7 +16,7 @@
             "ORIGstartupObjectId": 22,
             "ALTESTstartupObjectId": 130451,
             "LOANstartupObjectId": 50104,
-            "startupObjectId": 50104,
+            "startupObjectId": 22,
             "breakOnError": false,
             "launchBrowser": true,
             "enableLongRunningSqlStatements": true,
