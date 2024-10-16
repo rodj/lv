@@ -22,28 +22,36 @@ codeunit 50161 "Loan Full Cycle Simulate Test"
         InterestRate: Decimal;
         TermMonths: Integer;
         StartDate: Date;
+        MyTimestamp: Text;
+        DocNo: Text;
 
     procedure LoanFullCycle_TEST()
     begin
-        Util.Log('BEGIN: Manual Loan full test');
+        MyTimestamp := Util.DayHourMinuteString();
 
-        Initialize();
+        Util.Log('>> BEGIN: Manual Loan full test: ' + MyTimestamp, 'If no matching << END log with matching timestamp, something failed');
+
+        LoanId := Initialize();
 
         CreateValidLoan(LoanId, CustomerNo, LoanAmount, InterestRate, TermMonths, StartDate);
 
-        TestLoanDisbursement();
+        DocNo := Util.LoanDocNo(LoanId);
 
-        TestLoanRepayment(56.78);
+        TestLoanDisbursement(LoanId);
+
+        TestLoanRepayment(LoanId, 56.78);
 
         Util.Log('SUCCESS: Manual Loan full test');
 
         Cleanup('');
+
+        Util.Log('<< END: Manual Loan full test');
     end;
 
     /// <summary>
     /// TODO: Refactor to eliminate duplicated code with TestLoanRepayment
     /// </summary>
-    procedure TestLoanDisbursement()
+    procedure TestLoanDisbursement(loanId: Text)
     var
         GenJournalLine: Record "Gen. Journal Line";
         PostJournalEntries: Codeunit "Post Journal Entries";
@@ -59,6 +67,8 @@ codeunit 50161 "Loan Full Cycle Simulate Test"
         Result: Boolean;
         PrepareOnly: Boolean;
     begin
+        CleanupPreviousTestEntries(loanId);
+
         DocumentNo := Util.LoanDocNo(LoanMaster."Loan ID");
 
         // Get initial balances
@@ -160,7 +170,7 @@ codeunit 50161 "Loan Full Cycle Simulate Test"
         Message('Loan disbursement test completed successfully');
     end;
 
-    procedure TestLoanRepayment(RepaymentAmount: Decimal)
+    procedure TestLoanRepayment(loanId: Text; RepaymentAmount: Decimal)
     var
         GenJournalLine: Record "Gen. Journal Line";
         GLEntry: Record "G/L Entry";
@@ -282,6 +292,54 @@ codeunit 50161 "Loan Full Cycle Simulate Test"
         Util.Log(StrSubstNo('Loan repayment test completed successfully for amount %1', RepaymentAmount));
     end;
 
+    local procedure CleanupPreviousTestEntries(loanId: Text)
+    var
+        GenJournalLine: Record "Gen. Journal Line";
+        GLEntry: Record "G/L Entry";
+        BankAccountLedgerEntry: Record "Bank Account Ledger Entry";
+        ReversalGLEntry: Record "G/L Entry";
+        ReversalBankAccountLedgerEntry: Record "Bank Account Ledger Entry";
+        EntryNo: Integer;
+    begin
+        // Delete any existing journal lines for this loan
+        GenJournalLine.SetRange("Document No.", Util.LoanDocNo(loanId));
+        GenJournalLine.DeleteAll();
+
+        // Create reversal entries for G/L entries
+        GLEntry.SetRange("Document No.", Util.LoanDocNo(loanId));
+        if GLEntry.FindSet() then
+            repeat
+                ReversalGLEntry.Init();
+                ReversalGLEntry.TransferFields(GLEntry);
+                ReversalGLEntry."Entry No." := 0;  // Let the system assign a new Entry No.
+                ReversalGLEntry."Document No." := Util.LoanDocNo(LoanMaster."Loan ID") + '-REV';
+                ReversalGLEntry.Amount := -GLEntry.Amount;
+                ReversalGLEntry."Debit Amount" := -GLEntry."Debit Amount";
+                ReversalGLEntry."Credit Amount" := -GLEntry."Credit Amount";
+                ReversalGLEntry."Posting Date" := WorkDate();
+                ReversalGLEntry.Description := 'Reversal of ' + GLEntry.Description;
+                ReversalGLEntry.Insert(true);
+            until GLEntry.Next() = 0;
+
+        // Create reversal entries for Bank Account Ledger entries
+        BankAccountLedgerEntry.SetRange("Document No.", Util.LoanDocNo(loanId));
+        if BankAccountLedgerEntry.FindSet() then
+            repeat
+                ReversalBankAccountLedgerEntry.Init();
+                ReversalBankAccountLedgerEntry.TransferFields(BankAccountLedgerEntry);
+                ReversalBankAccountLedgerEntry."Entry No." := 0;  // Let the system assign a new Entry No.
+                ReversalBankAccountLedgerEntry."Document No." := Util.LoanDocNo(LoanMaster."Loan ID") + '-REV';
+                ReversalBankAccountLedgerEntry.Amount := -BankAccountLedgerEntry.Amount;
+                ReversalBankAccountLedgerEntry."Debit Amount" := -BankAccountLedgerEntry."Debit Amount";
+                ReversalBankAccountLedgerEntry."Credit Amount" := -BankAccountLedgerEntry."Credit Amount";
+                ReversalBankAccountLedgerEntry."Posting Date" := WorkDate();
+                ReversalBankAccountLedgerEntry.Description := 'Reversal of ' + BankAccountLedgerEntry.Description;
+                ReversalBankAccountLedgerEntry.Insert(true);
+            until BankAccountLedgerEntry.Next() = 0;
+
+        Util.Log('Cleanup completed for previous test entries', 'CleanupPreviousTestEntries');
+    end;
+
     procedure VerifyAccountBalance(AccountNo: Code[20]; ExpectedBalance: Decimal)
     var
         GLAccount: Record "G/L Account";
@@ -303,8 +361,10 @@ codeunit 50161 "Loan Full Cycle Simulate Test"
         DocumentNo: Text;
         EntryCount: Integer;
     begin
-        if UserMessage <> '' then
-            Message(UserMessage);
+        if UserMessage <> '' then begin
+            Util.Log(UserMessage, 'Cleanup (Manual Test)');
+            Message(UserMessage + '. This message is has been logged to MyLog');
+        end;
 
         LoanId := LoanMaster."Loan ID";
         DocumentNo := Util.LoanDocNo(LoanMaster."Loan ID");
@@ -363,17 +423,19 @@ codeunit 50161 "Loan Full Cycle Simulate Test"
     /// <summary>
     /// Sets values for loan under test (Amount, Id, Customer etc.)
     /// Also WorkDate, GenJournalTemplate, and GenJournalBatch
+    /// Returns LoanId to be used in test
     /// </summary>
-    procedure Initialize()
+    procedure Initialize(): Text
     var
         GenJournalLine: Record "Gen. Journal Line";
         GenJournalBatch: Record "Gen. Journal Batch";
         GenJournalTemplate: Record "Gen. Journal Template";
         GLSetup: Record "General Ledger Setup";
+        TestLoanId: Text;
     begin
         WorkDate := DMY2Date(18, 11, 2023);
 
-        LoanId := 'L' + Util.DayHourMinuteString();
+        TestLoanId := 'L' + Util.DayHourMinuteString();
         CustomerNo := 'C00010';
         CheckingAccountNo := Util.CheckingAccountNo();
         LoanAccountNo := Util.LoanAccountNo();
@@ -409,6 +471,8 @@ codeunit 50161 "Loan Full Cycle Simulate Test"
         GLSetup."Allow Posting From" := DMY2Date(1, 1, 2023);
         GLSetup."Allow Posting To" := DMY2Date(31, 12, 2024);
         GLSetup.Modify();
+
+        exit(TestLoanId);
     end;
 
     local procedure CreateLoanMaster(var LoanMaster: Record "Loan Master"; LoanID: Text)
