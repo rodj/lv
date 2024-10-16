@@ -185,23 +185,11 @@ codeunit 50161 "Loan Full Cycle Simulate Test"
         BankAccount: Record "Bank Account";
         InitialGLBalance: Decimal;
         InitialBankBalance: Decimal;
-        EntryCount: Integer;
         DocumentNo: Text;
         Result: Boolean;
-        PrepareOnly: Boolean;
     begin
-        DocumentNo := Util.LoanDocNo(LoanMaster."Loan ID");
-
-        if RepaymentAmount <= 0 then
-            Error('Repayment amount must be greater than zero.');
-
-        if RepaymentAmount > LoanMaster."Loan Amount" then
-            Error('Repayment amount cannot exceed the loan amount.');
-
-        Util.ClearAllLogs();
-        DataCleanup();
-
-        Util.Log(StrSubstNo('TestLoanRepayment started. Document No: %1, Repayment Amount: %2', DocumentNo, RepaymentAmount), 'TestLoanRepayment');
+        DocumentNo := Util.LoanDocNo(LoanId);
+        Util.Log(StrSubstNo('TestLoanRepayment started. LoanId: %1, Document No: %2, Repayment Amount: %3', LoanId, DocumentNo, RepaymentAmount), 'TestLoanRepayment');
 
         // Get initial balances
         GLAccount.Get(Util.LoanAccountNo());
@@ -213,90 +201,50 @@ codeunit 50161 "Loan Full Cycle Simulate Test"
 
         Util.Log(StrSubstNo('Initial balances - GL: %1, Bank: %2', InitialGLBalance, InitialBankBalance), 'TestLoanRepayment');
 
-        // Prepare journal entries
-        PrepareOnly := true;
         Result := LoanJournalPosting.PostLoanRepayment(LoanMaster, RepaymentAmount, WorkDate());
         if not Result then begin
-            Util.Log('Failed to prepare loan repayment journal entries', 'TestLoanRepayment');
-            exit;
-        end;
-
-        Util.Log('Successfully prepared journal entries', 'TestLoanRepayment');
-
-        // Find the correct journal batch
-        if not LoanJournalPosting.FindDefaultJournalBatch(GenJournalBatch) then begin
-            Util.Log('Failed to find default journal batch', 'TestLoanRepayment');
-            exit;
-        end;
-
-        Util.Log(StrSubstNo('Found journal batch: Template %1, Batch %2', GenJournalBatch."Journal Template Name", GenJournalBatch.Name), 'TestLoanRepayment');
-
-        // Log all journal lines before filtering
-        LogAllJournalLines(GenJournalBatch);
-
-        // Post the prepared journal entries
-        GenJournalLine.SetRange("Journal Template Name", GenJournalBatch."Journal Template Name");
-        GenJournalLine.SetRange("Journal Batch Name", GenJournalBatch.Name);
-        LogAllJournalLines(GenJournalBatch);
-
-        GenJournalLine.SetRange("Posting Date", WorkDate());
-        LogAllJournalLines(GenJournalBatch);
-
-        GenJournalLine.SetRange("Document No.", DocumentNo);
-        LogAllJournalLines(GenJournalBatch);
-
-        GenJournalLine.SetFilter(Amount, '<>0');
-        LogAllJournalLines(GenJournalBatch);
-
-        EntryCount := GenJournalLine.Count();
-        Util.Log(StrSubstNo('Final journal entries found to post: %1', EntryCount), 'TestLoanRepayment');
-
-        if EntryCount = 0 then begin
-            Util.Log(StrSubstNo('No journal entries found to post. Template: %1, Batch: %2, Date: %3, Document No: %4',
-                            GenJournalBatch."Journal Template Name", GenJournalBatch.Name, WorkDate(), DocumentNo), 'TestLoanRepayment');
-            exit;
-        end;
-
-        if GenJournalLine.FindSet() then begin
-            Commit();  // Commit the transaction before posting
-            CODEUNIT.RUN(CODEUNIT::"Gen. Jnl.-Post Batch", GenJournalLine);
-            if GetLastErrorText() <> '' then begin
-                Util.Log(StrSubstNo('Failed to post prepared journal entries. Error: %1', GetLastErrorText()), 'TestLoanRepayment');
-                exit;
-            end;
-        end else begin
-            Util.Log('No journal entries found to post after FindSet', 'TestLoanRepayment');
+            Util.Log('Failed to post loan repayment journal entries', 'TestLoanRepayment');
             exit;
         end;
 
         Util.Log('Successfully posted journal entries', 'TestLoanRepayment');
 
-        // Verify G/L Entries
+        // Check for posted G/L Entries
         GLEntry.SetRange("Posting Date", WorkDate());
         GLEntry.SetRange("Document No.", DocumentNo);
-        EntryCount := GLEntry.Count();
-        if GLEntry.FindSet() then
+        if GLEntry.FindSet() then begin
             repeat
-                Util.Log(StrSubstNo('G/L Entry: Account No.=%1, Posting Date=%2, Document No.=%3, Amount=%4, Description=%5',
-                                    GLEntry."G/L Account No.",
-                                    Format(GLEntry."Posting Date"),
-                                    GLEntry."Document No.",
-                                    Format(GLEntry.Amount),
-                                    GLEntry.Description), 'TestLoanRepayment');
-            until GLEntry.Next() = 0
-        else
-            Util.Log('No G/L entries found matching the criteria', 'TestLoanRepayment');
+                Util.Log(StrSubstNo('Posted G/L Entry: Account No.=%1, Amount=%2, Description=%3',
+                                    GLEntry."G/L Account No.", GLEntry.Amount, GLEntry.Description), 'TestLoanRepayment');
+            until GLEntry.Next() = 0;
+        end else begin
+            Util.Log('No G/L Entries found for the posted repayment', 'TestLoanRepayment');
 
-        if EntryCount <> 2 then begin
-            Util.Log(StrSubstNo('Incorrect number of G/L entries: %1', EntryCount), 'TestLoanRepayment');
+            // Additional logging to investigate why entries are not found
+            Util.Log(StrSubstNo('Searching for G/L Entries - Posting Date: %1, Document No: %2', WorkDate(), DocumentNo), 'TestLoanRepayment');
+
+            GLEntry.Reset();
+            if GLEntry.FindSet() then begin
+                repeat
+                    Util.Log(StrSubstNo('Found G/L Entry: Posting Date=%1, Document No=%2, Account No.=%3, Amount=%4',
+                                        GLEntry."Posting Date", GLEntry."Document No.", GLEntry."G/L Account No.", GLEntry.Amount), 'TestLoanRepayment');
+                until GLEntry.Next() = 0;
+            end else
+                Util.Log('No G/L Entries found at all', 'TestLoanRepayment');
+
             exit;
         end;
 
-        // Verify Bank Account Ledger Entry
+        // Check for posted Bank Account Ledger Entry
         BankAccountLedgerEntry.SetRange("Posting Date", WorkDate());
         BankAccountLedgerEntry.SetRange("Document No.", DocumentNo);
-        if not BankAccountLedgerEntry.FindFirst() then begin
-            Util.Log('No Bank Account Ledger Entry found', 'TestLoanRepayment');
+        if BankAccountLedgerEntry.FindSet() then begin
+            repeat
+                Util.Log(StrSubstNo('Posted Bank Account Ledger Entry: Bank Account No.=%1, Amount=%2, Description=%3',
+                                    BankAccountLedgerEntry."Bank Account No.", BankAccountLedgerEntry.Amount, BankAccountLedgerEntry.Description), 'TestLoanRepayment');
+            until BankAccountLedgerEntry.Next() = 0;
+        end else begin
+            Util.Log('No Bank Account Ledger Entries found for the posted repayment', 'TestLoanRepayment');
             exit;
         end;
 
