@@ -135,12 +135,6 @@ page 50103 "Loan Master Card"
                     Util: Codeunit "Utility";
                     S: Text;
                 begin
-                    S := Util.CrLf();
-                    ErrorText := 'Roses are red' + S + 'Violets are blue' + S + 'Sugar is sweet' + S + 'and so are you';
-                    ErrorText := ErrorText + ErrorText;
-                    Util.Log(ErrorText, '');
-                    exit;
-
                     if Rec.ValidateLoanMasterRecord() then begin
 
                         ClearLastError();
@@ -150,13 +144,14 @@ page 50103 "Loan Master Card"
                         // procedure ProcessLoanTransaction(var LoanMaster: Record "Loan Master"; TransactionAmount: Decimal; PostingDate: Date; TransactionType: Option Disbursement,Repayment; PrepareOnly: Boolean): Boolean
                         Result := Loan.ProcessLoanTransaction(Rec, Rec."Loan Amount", WorkDate, TransactionType, PrepareOnly);
 
-                        if not Result then begin
+                        if Result then
+                            Message('Journal entries have been prepared (but not posted) for loan disbursement of %1', Rec."Loan Amount")
+                        else begin
                             ErrorText := GetLastErrorText();
                             if ErrorText = '' then
                                 ErrorText := 'Unknown error occurred during loan disbursement posting.';
                             Error('Failed to post loan disbursement. Error: %1', ErrorText);
-                        end else
-                            Message('Journal entries have been prepared (but not posted) for loan disbursement of %1', Rec."Loan Amount");
+                        end;
                     end else begin
                         Message('Unable to disburse');
                     end;

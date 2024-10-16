@@ -44,6 +44,10 @@ codeunit 50104 "Loan Journal Posting"
         GenJournalLine.SetRange("Journal Template Name", GenJournalBatch."Journal Template Name");
         GenJournalLine.SetRange("Journal Batch Name", GenJournalBatch.Name);
         GenJournalLine.DeleteAll();
+        if not GenJournalLine.IsEmpty then begin
+            Util.Log('Failed to clear existing journal lines', 'ProcessLoanTransaction');
+            exit(false);
+        end;
 
         // Create balanced entries
         case TransactionType of
@@ -59,7 +63,11 @@ codeunit 50104 "Loan Journal Posting"
                 end;
         end;
 
-        // Post or prepare the journal
+        if GenJournalLine.IsEmpty then begin
+            Util.Log('No journal lines were created', 'ProcessLoanTransaction');
+            exit(false);
+        end;
+
         exit(PostOrPrepareJournal(GenJournalBatch, PrepareOnly));
     end;
 
@@ -82,17 +90,72 @@ codeunit 50104 "Loan Journal Posting"
     var
         GenJournalLine: Record "Gen. Journal Line";
         GenJnlPostBatch: Codeunit "Gen. Jnl.-Post Batch";
+        GenJournalTemplate: Record "Gen. Journal Template";
         Logger: Record "MyLog";
+        LineCount: Integer;
+        LineDetails: Text;
+        CurrLine: Text;
+        crlf: Text;
     begin
+        crlf := Util.CrLf();
+
+        Util.Log('---------------------------------', '');
+
+        if not GenJournalTemplate.Get('GENERAL') then begin
+            Util.Log('GENERAL journal template not found.');
+            exit(false);
+        end;
+
+        if not GenJournalBatch.Get('GENERAL', 'DAILY') then begin
+            Util.Log('DAILY batch not found in GENERAL template.');
+            exit(false);
+        end;
+
+        Util.Log(StrSubstNo('Using Journal Template: %1, Batch: %2', GenJournalBatch."Journal Template Name", GenJournalBatch.Name));
+
         GenJournalLine.SetRange("Journal Template Name", GenJournalBatch."Journal Template Name");
         GenJournalLine.SetRange("Journal Batch Name", GenJournalBatch.Name);
+        GenJournalLine.SetFilter(Amount, '<>0');  // Filter out the bogus empty line auto-added by the system
+
+        if not GenJournalLine.FindSet() then begin
+            Util.Log('No journal lines found for the specified batch.');
+            exit(false);
+        end;
+
+        repeat
+            LineCount += 1;
+            CurrLine := StrSubstNo('Line %1:%2' +
+                                      'Account Type: %3%2' +
+                                      'Account No.: %4%2' +
+                                      'Posting Date: %5%2' +
+                                      'Document Type: %6%2' +
+                                      'Document No.: %7%2' +
+                                      'Description: %8%2' +
+                                      'Amount: %9%2',
+                                      LineCount,
+                                      crlf,
+                                      GenJournalLine."Account Type",
+                                      GenJournalLine."Account No.",
+                                      Format(GenJournalLine."Posting Date"),
+                                      GenJournalLine."Document Type",
+                                      GenJournalLine."Document No.",
+                                      GenJournalLine.Description,
+                                      Format(GenJournalLine.Amount));
+
+            LineDetails += CurrLine;
+            Util.Log(CurrLine, 'PostOrPrepareJournal');
+        until GenJournalLine.Next() = 0;
+
+        //Util.Log(LineDetails, 'PostOrPrepareJournal');
+
+        Util.Log('---------------------------------');
 
         if PrepareOnly then begin
             // Just validate the lines
-            if GenJournalLine.FindSet() then
-                repeat
-                    GenJournalLine.Modify(true);
-                until GenJournalLine.Next() = 0;
+            if not GenJournalLine.Modify(true) then begin
+                Util.Log(StrSubstNo('Failed to insert journal line. Line No: %1, Error: %2', GenJournalLine."Line No.", GetLastErrorText), '');
+                exit(false);
+            end;
         end else begin
             // Post the journal
             if not GenJnlPostBatch.Run(GenJournalLine) then begin
@@ -118,11 +181,14 @@ codeunit 50104 "Loan Journal Posting"
     var
         GenJournalTemplate: Record "Gen. Journal Template";
     begin
+        /*
         if not GenJournalTemplate.FindFirst() then
             exit(false);
 
         GenJournalBatch.SetRange("Journal Template Name", GenJournalTemplate.Name);
         GenJournalBatch.SetRange(Recurring, false);
         exit(GenJournalBatch.FindFirst());
+        */
+        exit(GenJournalBatch.Get('GENERAL', 'DAILY'));
     end;
 }

@@ -82,6 +82,11 @@ codeunit 50190 Utility
         exit('LRQ-' + loanId);
     end;
 
+    procedure Log(message: Text)
+    begin
+        Log(message, '');
+    end;
+
     procedure Log(message: Text; srcPrc: Text)
     var
         logRec: Record MyLog;
