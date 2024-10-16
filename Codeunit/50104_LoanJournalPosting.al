@@ -158,8 +158,9 @@ codeunit 50104 "Loan Journal Posting"
             end;
         end else begin
             // Post the journal
-            if not GenJnlPostBatch.Run(GenJournalLine) then begin
-                Message('Failed to post the journal. Please check the error log for details.');
+            CODEUNIT.RUN(CODEUNIT::"Gen. Jnl.-Post Batch", GenJournalLine);
+            if GetLastErrorText() <> '' then begin
+                Util.Log(StrSubstNo('Failed to post the journal. Error: %1', GetLastErrorText()), '');
                 exit(false);
             end;
         end;
